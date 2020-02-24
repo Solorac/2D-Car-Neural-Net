@@ -1,18 +1,14 @@
-"""Hier wird mit der Maus, Linien gezeichnet um einen Rennstrecke für das 2D Auto zu erstellen"""
+"""Ein 2D Auto lernt mit NEAT wie man eine Rennstrecke fährt"""
 import pickle
-import time
 import math
 import os
 import neat
 from shapely.geometry import LineString
 import pygame
-pygame.font.init()
-
 
 WIN_WIDTH = 1280
 WIN_HEIGHT = 1024
 
-STAT_FONT = pygame.font.SysFont("arial", 40)
 SCREEN = pygame.display.set_mode((WIN_WIDTH, WIN_HEIGHT))
 CLOCK = pygame.time.Clock()
 FPS = 60 #Frames per second.
@@ -89,9 +85,6 @@ class Car:
 
     def draw(self):
         """Zeichnet Rechteck vom Auto"""
-        self.corner_rotated = self.rotate_points(self.corner_list)
-        self.detection_point_rotated = self.rotate_points(self.detection_point_list)
-
         # if self.collision_with_wall():
         #     self.color = RED
         # else:
@@ -102,7 +95,7 @@ class Car:
             pygame.draw.line(SCREEN, self.color, point, self.center_pos)
         for distance in self.distance_point_list:
             pygame.draw.circle(SCREEN, self.color, (int(distance[0]), int(distance[1])), 5)
-        pygame.draw.lines(SCREEN, self.color, True, self.corner_list)
+        # pygame.draw.lines(SCREEN, self.color, True, self.corner_list)
 
     def move(self):
         """Wie das Auto sich bewegt, jeden Frame"""
@@ -127,10 +120,12 @@ class Car:
         self.calculate_distance_points()
         self.distance_point_list = [self.top_left_distance_point, self.top_right_distance_point, self.bottom_left_distance_point, self.bottom_right_distance_point, self.top_distance_point]
 
-        for i in range(0, 5):
+        for i in range(0, len(self.distance_list)):
             self.distance_list[i] = math.sqrt(pow(abs(self.distance_point_list[i][0] - self.center_pos.x), 2) + pow(abs(self.distance_point_list[i][1] - self.center_pos.y), 2))
 
         self.time_since_last_fitness += 1
+        self.corner_rotated = self.rotate_points(self.corner_list)
+        self.detection_point_rotated = self.rotate_points(self.detection_point_list)
 
     def accelerate(self):
         """Beschleunigung des Autos"""
@@ -173,29 +168,32 @@ class Car:
                 return True
             elif line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.corner_rotated[1], self.corner_rotated[2]):
                 return True
+            
+        return False
 
     def collision_with_fitness_line(self):
         """Prüft ob das Auto die Fitness Linie berührt"""
         if line_intersect(FITNESS_POINTS_LIST[self.next_fitness], FITNESS_POINTS_LIST[self.next_fitness+1], self.corner_rotated[0], self.corner_rotated[1]):
             self.next_fitness += 2
-            if(self.next_fitness == len(FITNESS_POINTS_LIST)):
+            if self.next_fitness == len(FITNESS_POINTS_LIST):
                 self.next_fitness = 0
             return True
         elif line_intersect(FITNESS_POINTS_LIST[self.next_fitness], FITNESS_POINTS_LIST[self.next_fitness+1], self.corner_rotated[0], self.corner_rotated[3]):
             self.next_fitness += 2
-            if(self.next_fitness == len(FITNESS_POINTS_LIST)):
+            if self.next_fitness == len(FITNESS_POINTS_LIST):
                 self.next_fitness = 0
             return True
         elif line_intersect(FITNESS_POINTS_LIST[self.next_fitness], FITNESS_POINTS_LIST[self.next_fitness+1], self.corner_rotated[2], self.corner_rotated[3]):
             self.next_fitness += 2
-            if(self.next_fitness == len(FITNESS_POINTS_LIST)):
+            if self.next_fitness == len(FITNESS_POINTS_LIST):
                 self.next_fitness = 0
             return True
         elif line_intersect(FITNESS_POINTS_LIST[self.next_fitness], FITNESS_POINTS_LIST[self.next_fitness+1], self.corner_rotated[1], self.corner_rotated[2]):
             self.next_fitness += 2
-            if(self.next_fitness == len(FITNESS_POINTS_LIST)):
+            if self.next_fitness == len(FITNESS_POINTS_LIST):
                 self.next_fitness = 0
             return True
+        return False
 
     def calculate_distance_points(self):
         self.top_left_distance_point = self.detection_point_rotated[0]
@@ -252,8 +250,6 @@ def line_intersection_point(line1, line2):
         return a[0] * b[1] - a[1] * b[0]
 
     div = det(xdiff, ydiff)
-    if div == 0:
-        return 0
 
     d = (det(*line1), det(*line2))
     x = det(d, xdiff) / div
@@ -267,7 +263,7 @@ def draw_on_screen(car):
     car.draw()
 
     #Zeichnet Fitnesslinie und Startpunkt
-    pygame.draw.line(SCREEN, WHITE, FITNESS_POINTS_LIST[car.next_fitness], FITNESS_POINTS_LIST[car.next_fitness+1])
+    #pygame.draw.line(SCREEN, WHITE, FITNESS_POINTS_LIST[car.next_fitness], FITNESS_POINTS_LIST[car.next_fitness+1])
     #pygame.draw.circle(SCREEN, WHITE, START_POINT, 5)
 
 
@@ -294,13 +290,9 @@ def main(genomes, config):
                 running = False
                 pygame.quit()
                 quit()
-        
-
-
-
         for x, car in enumerate(cars):
-            if car.collision_with_wall() or car.time_since_last_fitness > 100:
-                genom[x].fitness -= 1
+            if car.collision_with_wall() or car.time_since_last_fitness > 60:
+                genom[x].fitness -= 5
                 cars.pop(x)
                 nets.pop(x)
                 genom.pop(x)
@@ -310,7 +302,7 @@ def main(genomes, config):
                 car.time_since_last_fitness = 0
                 car.fitness += 10
 
-            if car.fitness > 1000:
+            if car.fitness >= 4000:
                 running = False
 
         if not cars:
@@ -322,14 +314,13 @@ def main(genomes, config):
             draw_on_screen(car)
 
             output = nets[x].activate((car.distance_list[0], car.distance_list[1], car.distance_list[2], car.distance_list[3], car.distance_list[4]))
-            
             if output[0] > 0.5:
                 car.accelerate()
-            if output[1] > 0.5:
+            if output[1] > 0.2:
                 car.rotate_right()
-            if output[2] > 0.5:
+            if output[2] > 0.2:
                 car.rotate_left()
-            if output[3] > 0.5:
+            if output[3] > 0.9:
                 car.decelerate()
 
 
