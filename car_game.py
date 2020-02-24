@@ -40,20 +40,16 @@ class Car:
 
         self.top_left_detection_point = pygame.Vector2(self.center_pos.x - self.half_width * self.detection_range, self.center_pos.y - self.half_height * self.detection_range)
         self.top_right_detection_point = pygame.Vector2(self.center_pos.x + self.half_width * self.detection_range, self.center_pos.y - self.half_height * self.detection_range)
-        self.bottom_left_detection_point = pygame.Vector2(self.center_pos.x - self.half_width * self.detection_range, self.center_pos.y + self.half_height * self.detection_range)
-        self.bottom_right_detection_point = pygame.Vector2(self.center_pos.x + self.half_width * self.detection_range, self.center_pos.y + self.half_height * self.detection_range)
         self.top_detection_point = pygame.Vector2(self.center_pos.x, self.center_pos.y - self.half_height * self.detection_range)
-        self.detection_point_list = [self.top_left_detection_point, self.top_right_detection_point, self.bottom_left_detection_point, self.bottom_right_detection_point, self.top_detection_point]
+        self.detection_point_list = [self.top_left_detection_point, self.top_right_detection_point, self.top_detection_point]
         self.detection_point_rotated = self.detection_point_list[:]
 
         self.top_left_distance_point = self.top_left_detection_point
         self.top_right_distance_point = self.top_right_detection_point
-        self.bottom_left_distance_point = self.bottom_left_detection_point
-        self.bottom_right_distance_point = self.bottom_right_detection_point
         self.top_distance_point = self.top_detection_point
-        self.distance_point_list = [self.top_left_distance_point, self.top_right_distance_point, self.bottom_left_distance_point, self.bottom_right_distance_point, self.top_distance_point]
+        self.distance_point_list = [self.top_left_distance_point, self.top_right_distance_point, self.top_distance_point]
 
-        self.distance_list = [0, 0, 0, 0, 0]
+        self.distance_list = [0, 0, 0]
 
         self.velocity = pygame.Vector2(0, 0)
         self.color = GREEN
@@ -112,13 +108,11 @@ class Car:
 
         self.top_left_detection_point = pygame.Vector2(self.center_pos.x - self.half_width * self.detection_range, self.center_pos.y - self.half_height * self.detection_range)
         self.top_right_detection_point = pygame.Vector2(self.center_pos.x + self.half_width * self.detection_range, self.center_pos.y - self.half_height * self.detection_range)
-        self.bottom_left_detection_point = pygame.Vector2(self.center_pos.x - self.half_width * self.detection_range, self.center_pos.y + self.half_height * self.detection_range)
-        self.bottom_right_detection_point = pygame.Vector2(self.center_pos.x + self.half_width * self.detection_range, self.center_pos.y + self.half_height * self.detection_range)
         self.top_detection_point = pygame.Vector2(self.center_pos.x, self.center_pos.y - self.half_height * self.detection_range)
-        self.detection_point_list = [self.top_left_detection_point, self.top_right_detection_point, self.bottom_left_detection_point, self.bottom_right_detection_point, self.top_detection_point]
+        self.detection_point_list = [self.top_left_detection_point, self.top_right_detection_point, self.top_detection_point]
 
         self.calculate_distance_points()
-        self.distance_point_list = [self.top_left_distance_point, self.top_right_distance_point, self.bottom_left_distance_point, self.bottom_right_distance_point, self.top_distance_point]
+        self.distance_point_list = [self.top_left_distance_point, self.top_right_distance_point, self.top_distance_point]
 
         for i in range(0, len(self.distance_list)):
             self.distance_list[i] = math.sqrt(pow(abs(self.distance_point_list[i][0] - self.center_pos.x), 2) + pow(abs(self.distance_point_list[i][1] - self.center_pos.y), 2))
@@ -131,11 +125,6 @@ class Car:
         """Beschleunigung des Autos"""
         self.velocity.x += math.sin(self.radian) * self.acceleration
         self.velocity.y -= math.cos(self.radian) * self.acceleration
-
-    def decelerate(self):
-        """Bremsen und Rückwärtsgang des Autos"""
-        self.velocity.x -= math.sin(self.radian) * self.acceleration
-        self.velocity.y += math.cos(self.radian) * self.acceleration
 
     def rotate_right(self):
         """Nach Recht lenken"""
@@ -198,9 +187,7 @@ class Car:
     def calculate_distance_points(self):
         self.top_left_distance_point = self.detection_point_rotated[0]
         self.top_right_distance_point = self.detection_point_rotated[1]
-        self.bottom_left_distance_point = self.detection_point_rotated[2]
-        self.bottom_right_distance_point = self.detection_point_rotated[3]
-        self.top_distance_point = self.detection_point_rotated[4]
+        self.top_distance_point = self.detection_point_rotated[2]
 
 
         for i in range(0, len(OUTER_WALL_POINTS_LIST)-1):
@@ -209,11 +196,7 @@ class Car:
             if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[1]):
                 self.top_right_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[1]))
             if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[2]):
-                self.bottom_left_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[2]))
-            if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[3]):
-                self.bottom_right_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[3]))
-            if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[4]):
-                self.top_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[4]))
+                self.top_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[2]))
         
 
     
@@ -223,11 +206,7 @@ class Car:
             if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[1]):
                 self.top_right_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[1]))
             if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[2]):
-                self.bottom_left_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[2]))
-            if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[3]):
-                self.bottom_right_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[3]))
-            if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[4]):
-                self.top_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[4]))
+                self.top_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[2]))
 
 
 
@@ -313,16 +292,13 @@ def main(genomes, config):
             car.move()
             draw_on_screen(car)
 
-            output = nets[x].activate((car.distance_list[0], car.distance_list[1], car.distance_list[2], car.distance_list[3], car.distance_list[4]))
+            output = nets[x].activate((car.distance_list[0], car.distance_list[1], car.distance_list[2]))
             if output[0] > 0.5:
                 car.accelerate()
             if output[1] > 0.2:
                 car.rotate_right()
             if output[2] > 0.2:
                 car.rotate_left()
-            if output[3] > 0.9:
-                car.decelerate()
-
 
 
         pygame.display.update()
