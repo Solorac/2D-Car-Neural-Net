@@ -1,5 +1,8 @@
 """Ein 2D Auto lernt mit NEAT wie man eine Rennstrecke fährt"""
 import pickle
+import cProfile
+import pstats
+import concurrent.futures
 import math
 import os
 import neat
@@ -11,7 +14,7 @@ WIN_HEIGHT = 1024
 
 SCREEN = pygame.display.set_mode((WIN_WIDTH, WIN_HEIGHT))
 CLOCK = pygame.time.Clock()
-FPS = 60 #Frames per second.
+FPS = 360 #Frames per second.
 
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
@@ -23,6 +26,9 @@ OUTER_WALL_POINTS_LIST = pickle.load(open("Rennstrecke_Aussen.txt", "rb"))
 INNER_WALL_POINTS_LIST = pickle.load(open("Rennstrecke_Innen.txt", "rb"))
 FITNESS_POINTS_LIST = pickle.load(open("Fitnesslinien.txt", "rb"))
 START_POINT = pickle.load(open("Startpunkt.txt", "rb"))
+
+with open('best_car_genom.txt', 'rb') as f:
+    c = pickle.load(f)
 
 class Car:
     """Car"""
@@ -48,6 +54,10 @@ class Car:
         self.top_right_distance_point = self.top_right_detection_point
         self.top_distance_point = self.top_detection_point
         self.distance_point_list = [self.top_left_distance_point, self.top_right_distance_point, self.top_distance_point]
+
+        self.top_left_found = False
+        self.top_right_found = False
+        self.top_found = False
 
         self.distance_list = [0, 0, 0]
 
@@ -138,6 +148,9 @@ class Car:
 
     def collision_with_wall(self):
         """Gibt True zurück falls das Auto die Wand berührt"""
+        if self.time_since_last_fitness % 2 == 0 or self.time_since_last_fitness % 3 == 0:
+            return False
+
         for i in range(0, len(OUTER_WALL_POINTS_LIST)-1):
             if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.corner_rotated[0], self.corner_rotated[1]):
                 return True
@@ -189,24 +202,45 @@ class Car:
         self.top_right_distance_point = self.detection_point_rotated[1]
         self.top_distance_point = self.detection_point_rotated[2]
 
+        self.top_left_found = False
+        self.top_right_found = False
+        self.top_found = False
+
 
         for i in range(0, len(OUTER_WALL_POINTS_LIST)-1):
-            if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[0]):
-                self.top_left_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[0]))
-            if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[1]):
-                self.top_right_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[1]))
-            if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[2]):
-                self.top_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[2]))
+            if not self.top_left_found:
+                if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[0]):
+                    self.top_left_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[0]))
+                    self.top_left_found = True
+
+            if not self.top_right_found:
+                if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[1]):
+                    self.top_right_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[1]))
+                    self.top_right_found = True
+
+            if not self.top_found:
+                if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[2]):
+                    self.top_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[2]))
+                    self.top_found = True
         
 
     
         for i in range(0, len(INNER_WALL_POINTS_LIST)-1):
-            if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[0]):
-                self.top_left_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[0]))
-            if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[1]):
-                self.top_right_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[1]))
-            if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[2]):
-                self.top_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[2]))
+            if not self.top_left_found:
+                if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[0]):
+                    self.top_left_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[0]))
+                    self.top_left_found = True
+
+            if not self.top_right_found:
+                if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[1]):
+                    self.top_right_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[1]))
+                    self.top_right_found = True
+
+            if not self.top_found:
+                if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[2]):
+                    self.top_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[2]))
+                    self.top_found = True
+
 
 
 
@@ -245,7 +279,11 @@ def draw_on_screen(car):
     #pygame.draw.line(SCREEN, WHITE, FITNESS_POINTS_LIST[car.next_fitness], FITNESS_POINTS_LIST[car.next_fitness+1])
     #pygame.draw.circle(SCREEN, WHITE, START_POINT, 5)
 
+def move_draw(car):
+    car.move()
+    draw_on_screen(car)
 
+#random genom wird genommen und viele Autos werden erzeugt:
 def main(genomes, config):
     """main function"""
     cars = []
@@ -269,8 +307,10 @@ def main(genomes, config):
                 running = False
                 pygame.quit()
                 quit()
+
+
         for x, car in enumerate(cars):
-            if car.collision_with_wall() or car.time_since_last_fitness > 60:
+            if car.collision_with_wall() or car.time_since_last_fitness > 100:
                 genom[x].fitness -= 5
                 cars.pop(x)
                 nets.pop(x)
@@ -281,17 +321,18 @@ def main(genomes, config):
                 car.time_since_last_fitness = 0
                 car.fitness += 10
 
-            if car.fitness >= 4000:
+            if car.fitness >= 6000:
                 running = False
+
 
         if not cars:
             running = False
             break
 
-        for x, car in enumerate(cars):
-            car.move()
-            draw_on_screen(car)
+        with concurrent.futures.ThreadPoolExecutor() as executer:
+            executer.map(move_draw, cars)
 
+        for x, car in enumerate(cars):
             output = nets[x].activate((car.distance_list[0], car.distance_list[1], car.distance_list[2]))
             if output[0] > 0.5:
                 car.accelerate()
@@ -299,6 +340,58 @@ def main(genomes, config):
                 car.rotate_right()
             if output[2] > 0.2:
                 car.rotate_left()
+
+
+        pygame.display.update()
+
+#winner genom wird genommen und nur der gewinner wird laufen:
+def main_one(genomes, config):
+    """main function"""
+    car = Car()
+    genom = 0
+    net = neat.nn.FeedForwardNetwork.create(c, config)
+    for _, g in genomes:
+        g.fitness = 0
+        genom = g
+
+    
+    running = True
+    while running:
+        CLOCK.tick(FPS)
+        SCREEN.fill(GREY)
+
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+                pygame.quit()
+                quit()
+
+
+        if car.collision_with_wall() or car.time_since_last_fitness > 100:
+            genom.fitness -= 5
+            running = False
+            break
+
+        if car.collision_with_fitness_line():
+            genom.fitness += 10
+            car.time_since_last_fitness = 0
+            car.fitness += 10
+
+
+        if car.fitness >= 4000:
+            running = False
+            break
+
+        move_draw(car)
+
+        output = net.activate((car.distance_list[0], car.distance_list[1], car.distance_list[2]))
+        if output[0] > 0.5:
+            car.accelerate()
+        if output[1] > 0.2:
+            car.rotate_right()
+        if output[2] > 0.2:
+            car.rotate_left()
 
 
         pygame.display.update()
@@ -314,6 +407,9 @@ def run(config_file):
 
     winner = p.run(main, 5000)
     print(winner)
+    # pickle.dump(winner, open("best_car_genom.txt", "wb"))
+    # with open("asd.txt", "w") as fi:
+    #     fi.write(str(winner))
 
 
 if __name__ == '__main__':
