@@ -6,6 +6,8 @@ import neat
 from shapely.geometry import LineString
 import pygame
 
+pygame.init()
+
 WIN_WIDTH = 1280
 WIN_HEIGHT = 1024
 
@@ -13,16 +15,24 @@ SCREEN = pygame.display.set_mode((WIN_WIDTH, WIN_HEIGHT))
 CLOCK = pygame.time.Clock()
 FPS = 60 #Frames per second.
 
+#How long in seconds a Car survives after the last fitness line
+DEATH_AFTER_SECONDS = 5
+
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 GREY = (100, 100, 100)
 
+FONT = pygame.font.Font(None, 30)
+
 OUTER_WALL_POINTS_LIST = pickle.load(open("Rennstrecke_Aussen.txt", "rb"))
 INNER_WALL_POINTS_LIST = pickle.load(open("Rennstrecke_Innen.txt", "rb"))
 FITNESS_POINTS_LIST = pickle.load(open("Fitnesslinien.txt", "rb"))
 START_POINT = pickle.load(open("Startpunkt.txt", "rb"))
+
+with open('best_car_genom.txt', 'rb') as f:
+    BEST_CAR = pickle.load(f)
 
 class Car:
     """Car"""
@@ -40,33 +50,33 @@ class Car:
 
         self.top_left_detection_point = pygame.Vector2(self.center_pos.x - self.half_width * self.detection_range, self.center_pos.y - self.half_height * self.detection_range)
         self.top_right_detection_point = pygame.Vector2(self.center_pos.x + self.half_width * self.detection_range, self.center_pos.y - self.half_height * self.detection_range)
-        self.bottom_left_detection_point = pygame.Vector2(self.center_pos.x - self.half_width * self.detection_range, self.center_pos.y + self.half_height * self.detection_range)
-        self.bottom_right_detection_point = pygame.Vector2(self.center_pos.x + self.half_width * self.detection_range, self.center_pos.y + self.half_height * self.detection_range)
         self.top_detection_point = pygame.Vector2(self.center_pos.x, self.center_pos.y - self.half_height * self.detection_range)
-        self.detection_point_list = [self.top_left_detection_point, self.top_right_detection_point, self.bottom_left_detection_point, self.bottom_right_detection_point, self.top_detection_point]
+        self.detection_point_list = [self.top_left_detection_point, self.top_right_detection_point, self.top_detection_point]
         self.detection_point_rotated = self.detection_point_list[:]
 
         self.top_left_distance_point = self.top_left_detection_point
         self.top_right_distance_point = self.top_right_detection_point
-        self.bottom_left_distance_point = self.bottom_left_detection_point
-        self.bottom_right_distance_point = self.bottom_right_detection_point
         self.top_distance_point = self.top_detection_point
-        self.distance_point_list = [self.top_left_distance_point, self.top_right_distance_point, self.bottom_left_distance_point, self.bottom_right_distance_point, self.top_distance_point]
+        self.distance_point_list = [self.top_left_distance_point, self.top_right_distance_point, self.top_distance_point]
 
-        self.distance_list = [0, 0, 0, 0, 0]
+        self.top_left_found = False
+        self.top_right_found = False
+        self.top_found = False
+
+        self.distance_list = [math.sqrt(math.pow(self.half_width * self.detection_range, 2) + math.pow(self.half_height * self.detection_range, 2)), math.sqrt(math.pow(self.half_width * self.detection_range, 2) + math.pow(self.half_height * self.detection_range, 2)), self.detection_range * self.half_height]
 
         self.velocity = pygame.Vector2(0, 0)
         self.color = GREEN
-        self.acceleration = 0.5
+        self.acceleration = 25
         self.drag = 0.9
         self.angle = 0
         self.radian = 0
         self.angular_velocity = 0
-        self.angular_drag = 0.9
-        self.turn_speed = 0.4
+        self.angular_drag = 0.2
+        self.turn_speed = 4
         self.next_fitness = 0
         self.fitness = 0
-        self.time_since_last_fitness = 0
+        self.seconds_since_last_fitness = 0
 
     def rotate_points(self, point_list):
         """rot"""
@@ -84,24 +94,24 @@ class Car:
         return point_list
 
     def draw(self):
-        """Zeichnet Rechteck vom Auto"""
-        # if self.collision_with_wall():
-        #     self.color = RED
-        # else:
-        #     self.color = GREEN
-        #pygame.draw.circle(SCREEN, self.color, (int(self.center_pos.x), int(self.center_pos.y)), 5)
+        """Zeichnet das Auto"""
         pygame.draw.lines(SCREEN, self.color, True, self.corner_rotated)
+        if self.collision_with_wall():
+            self.color = RED
+        else:
+            self.color = GREEN
+        pygame.draw.circle(SCREEN, self.color, (int(self.center_pos.x), int(self.center_pos.y)), 5)
         for point in self.detection_point_list:
             pygame.draw.line(SCREEN, self.color, point, self.center_pos)
         for distance in self.distance_point_list:
             pygame.draw.circle(SCREEN, self.color, (int(distance[0]), int(distance[1])), 5)
-        # pygame.draw.lines(SCREEN, self.color, True, self.corner_list)
+        pygame.draw.lines(SCREEN, self.color, True, self.corner_list)
 
-    def move(self):
+    def move(self, delta_time):
         """Wie das Auto sich bewegt, jeden Frame"""
-        self.center_pos += self.velocity
+        self.center_pos += self.velocity * delta_time
         self.velocity *= self.drag
-        self.angle += self.angular_velocity
+        self.angle += self.angular_velocity * delta_time
         self.angular_velocity *= self.angular_drag
         self.radian = self.angle * math.pi / 180
         self.corner_top_left = pygame.Vector2(self.center_pos.x - self.half_width, self.center_pos.y - self.half_height)
@@ -112,18 +122,16 @@ class Car:
 
         self.top_left_detection_point = pygame.Vector2(self.center_pos.x - self.half_width * self.detection_range, self.center_pos.y - self.half_height * self.detection_range)
         self.top_right_detection_point = pygame.Vector2(self.center_pos.x + self.half_width * self.detection_range, self.center_pos.y - self.half_height * self.detection_range)
-        self.bottom_left_detection_point = pygame.Vector2(self.center_pos.x - self.half_width * self.detection_range, self.center_pos.y + self.half_height * self.detection_range)
-        self.bottom_right_detection_point = pygame.Vector2(self.center_pos.x + self.half_width * self.detection_range, self.center_pos.y + self.half_height * self.detection_range)
         self.top_detection_point = pygame.Vector2(self.center_pos.x, self.center_pos.y - self.half_height * self.detection_range)
-        self.detection_point_list = [self.top_left_detection_point, self.top_right_detection_point, self.bottom_left_detection_point, self.bottom_right_detection_point, self.top_detection_point]
+        self.detection_point_list = [self.top_left_detection_point, self.top_right_detection_point, self.top_detection_point]
 
         self.calculate_distance_points()
-        self.distance_point_list = [self.top_left_distance_point, self.top_right_distance_point, self.bottom_left_distance_point, self.bottom_right_distance_point, self.top_distance_point]
+        self.distance_point_list = [self.top_left_distance_point, self.top_right_distance_point, self.top_distance_point]
 
         for i in range(0, len(self.distance_list)):
             self.distance_list[i] = math.sqrt(pow(abs(self.distance_point_list[i][0] - self.center_pos.x), 2) + pow(abs(self.distance_point_list[i][1] - self.center_pos.y), 2))
 
-        self.time_since_last_fitness += 1
+        self.seconds_since_last_fitness += delta_time
         self.corner_rotated = self.rotate_points(self.corner_list)
         self.detection_point_rotated = self.rotate_points(self.detection_point_list)
 
@@ -131,11 +139,6 @@ class Car:
         """Beschleunigung des Autos"""
         self.velocity.x += math.sin(self.radian) * self.acceleration
         self.velocity.y -= math.cos(self.radian) * self.acceleration
-
-    def decelerate(self):
-        """Bremsen und Rückwärtsgang des Autos"""
-        self.velocity.x -= math.sin(self.radian) * self.acceleration
-        self.velocity.y += math.cos(self.radian) * self.acceleration
 
     def rotate_right(self):
         """Nach Recht lenken"""
@@ -150,24 +153,32 @@ class Car:
     def collision_with_wall(self):
         """Gibt True zurück falls das Auto die Wand berührt"""
         for i in range(0, len(OUTER_WALL_POINTS_LIST)-1):
+            # top
             if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.corner_rotated[0], self.corner_rotated[1]):
                 return True
-            elif line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.corner_rotated[0], self.corner_rotated[3]):
+            # left
+            if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.corner_rotated[0], self.corner_rotated[3]):
                 return True
-            elif line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.corner_rotated[2], self.corner_rotated[3]):
-                return True
+            # right
             elif line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.corner_rotated[1], self.corner_rotated[2]):
                 return True
+            # bottom
+            # elif line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.corner_rotated[2], self.corner_rotated[3]):
+            #     return True
 
         for i in range(0, len(INNER_WALL_POINTS_LIST)-1):
+            # top
             if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.corner_rotated[0], self.corner_rotated[1]):
                 return True
-            elif line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.corner_rotated[0], self.corner_rotated[3]):
+            # left
+            if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.corner_rotated[0], self.corner_rotated[3]):
                 return True
-            elif line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.corner_rotated[2], self.corner_rotated[3]):
-                return True
+            # right
             elif line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.corner_rotated[1], self.corner_rotated[2]):
                 return True
+            # bottom
+            # elif line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.corner_rotated[2], self.corner_rotated[3]):
+            #     return True
             
         return False
 
@@ -183,51 +194,63 @@ class Car:
             if self.next_fitness == len(FITNESS_POINTS_LIST):
                 self.next_fitness = 0
             return True
-        elif line_intersect(FITNESS_POINTS_LIST[self.next_fitness], FITNESS_POINTS_LIST[self.next_fitness+1], self.corner_rotated[2], self.corner_rotated[3]):
-            self.next_fitness += 2
-            if self.next_fitness == len(FITNESS_POINTS_LIST):
-                self.next_fitness = 0
-            return True
         elif line_intersect(FITNESS_POINTS_LIST[self.next_fitness], FITNESS_POINTS_LIST[self.next_fitness+1], self.corner_rotated[1], self.corner_rotated[2]):
             self.next_fitness += 2
             if self.next_fitness == len(FITNESS_POINTS_LIST):
                 self.next_fitness = 0
             return True
+        #bottom
+        # elif line_intersect(FITNESS_POINTS_LIST[self.next_fitness], FITNESS_POINTS_LIST[self.next_fitness+1], self.corner_rotated[2], self.corner_rotated[3]):
+        #     self.next_fitness += 2
+        #     if self.next_fitness == len(FITNESS_POINTS_LIST):
+        #         self.next_fitness = 0
+        #     return True
         return False
 
     def calculate_distance_points(self):
         self.top_left_distance_point = self.detection_point_rotated[0]
         self.top_right_distance_point = self.detection_point_rotated[1]
-        self.bottom_left_distance_point = self.detection_point_rotated[2]
-        self.bottom_right_distance_point = self.detection_point_rotated[3]
-        self.top_distance_point = self.detection_point_rotated[4]
+        self.top_distance_point = self.detection_point_rotated[2]
+
+        self.top_left_found = False
+        self.top_right_found = False
+        self.top_found = False
 
 
         for i in range(0, len(OUTER_WALL_POINTS_LIST)-1):
-            if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[0]):
-                self.top_left_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[0]))
-            if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[1]):
-                self.top_right_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[1]))
-            if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[2]):
-                self.bottom_left_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[2]))
-            if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[3]):
-                self.bottom_right_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[3]))
-            if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[4]):
-                self.top_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[4]))
+            if not self.top_left_found:
+                if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[0]):
+                    self.top_left_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[0]))
+                    self.top_left_found = True
+
+            if not self.top_right_found:
+                if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[1]):
+                    self.top_right_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[1]))
+                    self.top_right_found = True
+
+            if not self.top_found:
+                if line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[2]):
+                    self.top_distance_point = line_intersection_point((OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[2]))
+                    self.top_found = True
         
 
     
         for i in range(0, len(INNER_WALL_POINTS_LIST)-1):
-            if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[0]):
-                self.top_left_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[0]))
-            if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[1]):
-                self.top_right_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[1]))
-            if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[2]):
-                self.bottom_left_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[2]))
-            if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[3]):
-                self.bottom_right_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[3]))
-            if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[4]):
-                self.top_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[4]))
+            if not self.top_left_found:
+                if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[0]):
+                    self.top_left_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[0]))
+                    self.top_left_found = True
+
+            if not self.top_right_found:
+                if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[1]):
+                    self.top_right_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[1]))
+                    self.top_right_found = True
+
+            if not self.top_found:
+                if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.center_pos, self.detection_point_rotated[2]):
+                    self.top_distance_point = line_intersection_point((INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1]), (self.center_pos, self.detection_point_rotated[2]))
+                    self.top_found = True
+
 
 
 
@@ -266,7 +289,11 @@ def draw_on_screen(car):
     #pygame.draw.line(SCREEN, WHITE, FITNESS_POINTS_LIST[car.next_fitness], FITNESS_POINTS_LIST[car.next_fitness+1])
     #pygame.draw.circle(SCREEN, WHITE, START_POINT, 5)
 
+def move_draw(car, delta_time):
+    car.move(delta_time)
+    draw_on_screen(car)
 
+#random genom wird genommen und viele Autos werden erzeugt:
 def main(genomes, config):
     """main function"""
     cars = []
@@ -282,47 +309,100 @@ def main(genomes, config):
 
     running = True
     while running:
-        CLOCK.tick(FPS)
+        delta_time = CLOCK.tick(FPS) / 1000
         SCREEN.fill(GREY)
+
+        current_fps = FONT.render(str(int(CLOCK.get_fps())), True, WHITE)
+        SCREEN.blit(current_fps, (50, 50))
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
                 pygame.quit()
                 quit()
+
+
         for x, car in enumerate(cars):
-            if car.collision_with_wall() or car.time_since_last_fitness > 60:
-                genom[x].fitness -= 5
+            if car.collision_with_wall() or car.seconds_since_last_fitness > DEATH_AFTER_SECONDS:
+                genom[x].fitness -= 10
                 cars.pop(x)
                 nets.pop(x)
                 genom.pop(x)
 
             elif car.collision_with_fitness_line():
                 genom[x].fitness += 10
-                car.time_since_last_fitness = 0
+                car.seconds_since_last_fitness = 0
                 car.fitness += 10
 
-            if car.fitness >= 4000:
+            if car.fitness >= 6000:
                 running = False
+
+            move_draw(car, delta_time)
 
         if not cars:
             running = False
             break
 
         for x, car in enumerate(cars):
-            car.move()
-            draw_on_screen(car)
-
-            output = nets[x].activate((car.distance_list[0], car.distance_list[1], car.distance_list[2], car.distance_list[3], car.distance_list[4]))
+            output = nets[x].activate((car.distance_list[0], car.distance_list[1], car.distance_list[2]))
             if output[0] > 0.5:
                 car.accelerate()
-            if output[1] > 0.2:
+            if output[1] > 0.5:
                 car.rotate_right()
-            if output[2] > 0.2:
+            if output[2] > 0.5:
                 car.rotate_left()
-            if output[3] > 0.9:
-                car.decelerate()
 
+
+        pygame.display.update()
+
+#winner genom wird genommen und nur der gewinner wird laufen:
+def main_one(genomes, config):
+    """main function"""
+    car = Car()
+    genom = 0
+    net = neat.nn.FeedForwardNetwork.create(BEST_CAR, config)
+    for _, g in genomes:
+        g.fitness = 0
+        genom = g
+
+    
+    running = True
+    while running:
+        delta_time = CLOCK.tick(FPS) / 1000
+        SCREEN.fill(GREY)
+
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+                pygame.quit()
+                quit()
+
+
+        if car.collision_with_wall() or car.seconds_since_last_fitness > DEATH_AFTER_SECONDS:
+            genom.fitness -= 5
+            running = False
+            break
+
+        if car.collision_with_fitness_line():
+            genom.fitness += 10
+            car.seconds_since_last_fitness = 0
+            car.fitness += 10
+
+
+        if car.fitness >= 6000:
+            running = False
+            break
+
+        move_draw(car, delta_time)
+
+        output = net.activate((car.distance_list[0], car.distance_list[1], car.distance_list[2]))
+        if output[0] > 0.5:
+            car.accelerate()
+        if output[1] > 0.2:
+            car.rotate_right()
+        if output[2] > 0.2:
+            car.rotate_left()
 
 
         pygame.display.update()
@@ -338,9 +418,100 @@ def run(config_file):
 
     winner = p.run(main, 5000)
     print(winner)
+    # pickle.dump(winner, open("best_car_genom.txt", "wb"))
+    # with open("asd.txt", "w") as fi:
+    #     fi.write(str(winner))
+
+
+def change_feedforward(population):
+    feedforward_string = F"""
+    [NEAT]
+    fitness_criterion     = max
+    fitness_threshold     = 6000
+    pop_size              = {population}
+    reset_on_extinction   = False
+
+    [DefaultGenome]
+    # node activation options
+    activation_default      = tanh
+    activation_mutate_rate  = 0.0
+    activation_options      = tanh sigmoid
+
+    # node aggregation options
+    aggregation_default     = sum
+    aggregation_mutate_rate = 0.0
+    aggregation_options     = sum
+
+    # node bias options
+    bias_init_mean          = 0.0
+    bias_init_stdev         = 1.0
+    bias_max_value          = 30.0
+    bias_min_value          = -30.0
+    bias_mutate_power       = 0.5
+    bias_mutate_rate        = 0.7
+    bias_replace_rate       = 0.1
+
+    # genome compatibility options
+    compatibility_disjoint_coefficient = 1.0
+    compatibility_weight_coefficient   = 0.5
+
+    # connection add/remove rates
+    conn_add_prob           = 0.5
+    conn_delete_prob        = 0.5
+
+    # connection enable options
+    enabled_default         = True
+    enabled_mutate_rate     = 0.01
+
+    feed_forward            = True
+    initial_connection      = full
+
+    # node add/remove rates
+    node_add_prob           = 0.2
+    node_delete_prob        = 0.2
+
+    # network parameters
+    num_hidden              = 0
+    num_inputs              = 3
+    num_outputs             = 3
+
+    # node response options
+    response_init_mean      = 1.0
+    response_init_stdev     = 0.0
+    response_max_value      = 30.0
+    response_min_value      = -30.0
+    response_mutate_power   = 0.0
+    response_mutate_rate    = 0.0
+    response_replace_rate   = 0.0
+
+    # connection weight options
+    weight_init_mean        = 0.0
+    weight_init_stdev       = 1.0
+    weight_max_value        = 30
+    weight_min_value        = -30
+    weight_mutate_power     = 0.5
+    weight_mutate_rate      = 0.8
+    weight_replace_rate     = 0.1
+
+    [DefaultSpeciesSet]
+    compatibility_threshold = 3.0
+
+    [DefaultStagnation]
+    species_fitness_func = max
+    max_stagnation       = 1
+    species_elitism      = 4
+
+    [DefaultReproduction]
+    elitism            = 4
+    survival_threshold = 0.2"""
+
+    with open("config-feedforward.txt", "w") as feed:
+        feed.write(feedforward_string)
+
 
 
 if __name__ == '__main__':
+    # change_feedforward(10)
     local_dir = os.path.dirname(__file__)
     config_path = os.path.join(local_dir, "config-feedforward.txt")
     run(config_path)
