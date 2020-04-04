@@ -1,8 +1,5 @@
 """Ein 2D Auto lernt mit NEAT wie man eine Rennstrecke fährt"""
 import pickle
-import cProfile
-import pstats
-import concurrent.futures
 import math
 import os
 import neat
@@ -28,7 +25,7 @@ FITNESS_POINTS_LIST = pickle.load(open("Fitnesslinien.txt", "rb"))
 START_POINT = pickle.load(open("Startpunkt.txt", "rb"))
 
 with open('best_car_genom.txt', 'rb') as f:
-    c = pickle.load(f)
+    BEST_CAR = pickle.load(f)
 
 class Car:
     """Car"""
@@ -64,11 +61,11 @@ class Car:
         self.velocity = pygame.Vector2(0, 0)
         self.color = GREEN
         self.acceleration = 0.5
-        self.drag = 0.9
+        self.drag = 0.85
         self.angle = 0
         self.radian = 0
         self.angular_velocity = 0
-        self.angular_drag = 0.9
+        self.angular_drag = 0.85
         self.turn_speed = 0.4
         self.next_fitness = 0
         self.fitness = 0
@@ -101,7 +98,7 @@ class Car:
             pygame.draw.line(SCREEN, self.color, point, self.center_pos)
         for distance in self.distance_point_list:
             pygame.draw.circle(SCREEN, self.color, (int(distance[0]), int(distance[1])), 5)
-        # pygame.draw.lines(SCREEN, self.color, True, self.corner_list)
+        pygame.draw.lines(SCREEN, self.color, True, self.corner_list)
 
     def move(self):
         """Wie das Auto sich bewegt, jeden Frame"""
@@ -148,7 +145,7 @@ class Car:
 
     def collision_with_wall(self):
         """Gibt True zurück falls das Auto die Wand berührt"""
-        if self.time_since_last_fitness % 2 == 0 or self.time_since_last_fitness % 3 == 0:
+        if self.time_since_last_fitness % 2 == 0:
             return False
 
         for i in range(0, len(OUTER_WALL_POINTS_LIST)-1):
@@ -156,20 +153,20 @@ class Car:
                 return True
             elif line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.corner_rotated[0], self.corner_rotated[3]):
                 return True
-            elif line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.corner_rotated[2], self.corner_rotated[3]):
-                return True
             elif line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.corner_rotated[1], self.corner_rotated[2]):
                 return True
+            # elif line_intersect(OUTER_WALL_POINTS_LIST[i], OUTER_WALL_POINTS_LIST[i+1], self.corner_rotated[2], self.corner_rotated[3]):
+            #     return True
 
         for i in range(0, len(INNER_WALL_POINTS_LIST)-1):
             if line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.corner_rotated[0], self.corner_rotated[1]):
                 return True
             elif line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.corner_rotated[0], self.corner_rotated[3]):
                 return True
-            elif line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.corner_rotated[2], self.corner_rotated[3]):
-                return True
             elif line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.corner_rotated[1], self.corner_rotated[2]):
                 return True
+            # elif line_intersect(INNER_WALL_POINTS_LIST[i], INNER_WALL_POINTS_LIST[i+1], self.corner_rotated[2], self.corner_rotated[3]):
+            #     return True
             
         return False
 
@@ -185,16 +182,16 @@ class Car:
             if self.next_fitness == len(FITNESS_POINTS_LIST):
                 self.next_fitness = 0
             return True
-        elif line_intersect(FITNESS_POINTS_LIST[self.next_fitness], FITNESS_POINTS_LIST[self.next_fitness+1], self.corner_rotated[2], self.corner_rotated[3]):
-            self.next_fitness += 2
-            if self.next_fitness == len(FITNESS_POINTS_LIST):
-                self.next_fitness = 0
-            return True
         elif line_intersect(FITNESS_POINTS_LIST[self.next_fitness], FITNESS_POINTS_LIST[self.next_fitness+1], self.corner_rotated[1], self.corner_rotated[2]):
             self.next_fitness += 2
             if self.next_fitness == len(FITNESS_POINTS_LIST):
                 self.next_fitness = 0
             return True
+        # elif line_intersect(FITNESS_POINTS_LIST[self.next_fitness], FITNESS_POINTS_LIST[self.next_fitness+1], self.corner_rotated[2], self.corner_rotated[3]):
+        #     self.next_fitness += 2
+        #     if self.next_fitness == len(FITNESS_POINTS_LIST):
+        #         self.next_fitness = 0
+        #     return True
         return False
 
     def calculate_distance_points(self):
@@ -323,14 +320,12 @@ def main(genomes, config):
 
             if car.fitness >= 6000:
                 running = False
+            move_draw(car)
 
 
         if not cars:
             running = False
             break
-
-        with concurrent.futures.ThreadPoolExecutor() as executer:
-            executer.map(move_draw, cars)
 
         for x, car in enumerate(cars):
             output = nets[x].activate((car.distance_list[0], car.distance_list[1], car.distance_list[2]))
@@ -349,7 +344,7 @@ def main_one(genomes, config):
     """main function"""
     car = Car()
     genom = 0
-    net = neat.nn.FeedForwardNetwork.create(c, config)
+    net = neat.nn.FeedForwardNetwork.create(BEST_CAR, config)
     for _, g in genomes:
         g.fitness = 0
         genom = g
@@ -407,9 +402,7 @@ def run(config_file):
 
     winner = p.run(main, 5000)
     print(winner)
-    # pickle.dump(winner, open("best_car_genom.txt", "wb"))
-    # with open("asd.txt", "w") as fi:
-    #     fi.write(str(winner))
+    pickle.dump(winner, open("best_car_genom.txt", "wb"))
 
 
 if __name__ == '__main__':
